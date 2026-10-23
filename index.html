@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Story Cafe - Quiz Game</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background: #121212; color: #ffffff; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+
+    /* Splash Screen Animation */
+    #splash-screen {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: #0d0d0d;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 9999;
+      animation: fadeOut 0.8s ease 2.2s forwards;
+    }
+    .splash-logo {
+      font-size: 2.8rem;
+      font-weight: bold;
+      color: #ffaa00;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      animation: zoomIn 1.5s ease forwards;
+      text-align: center;
+      padding: 0 20px;
+    }
+    .splash-sub {
+      font-size: 1.1rem;
+      color: #aaaaaa;
+      margin-top: 10px;
+      opacity: 0;
+      animation: fadeInText 1s ease 0.8s forwards;
+    }
+
+    @keyframes zoomIn {
+      0% { transform: scale(0.5); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes fadeInText {
+      0% { opacity: 0; transform: translateY(10px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeOut {
+      0% { opacity: 1; visibility: visible; }
+      100% { opacity: 0; visibility: hidden; }
+    }
+
+    /* Main Container */
+    .container { background: #1e1e1e; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); width: 90%; max-width: 400px; text-align: center; }
+    h1 { color: #ffaa00; margin-bottom: 20px; font-size: 24px; }
+    input { width: 100%; padding: 12px; margin-bottom: 15px; border: 1px solid #444; background: #2a2a2a; color: #fff; border-radius: 6px; font-size: 16px; outline: none; }
+    button { width: 100%; padding: 12px; background: #ffaa00; border: none; color: #121212; font-weight: bold; font-size: 16px; border-radius: 6px; cursor: pointer; transition: 0.2s; }
+    button:hover { background: #e69500; }
+    .hidden { display: none !important; }
+    .option-btn { background: #2a2a2a; color: #fff; margin-bottom: 10px; border: 1px solid #444; }
+    .option-btn:hover { background: #3a3a3a; }
+    .timer { font-size: 18px; color: #ff5252; margin-bottom: 15px; font-weight: bold; }
+    .score-board { font-size: 20px; color: #4caf50; font-weight: bold; margin-top: 15px; }
+  </style>
+</head>
+<body>
+
+  <!-- Splash Screen Animation -->
+  <div id="splash-screen">
+    <div class="splash-logo">☕ The Story Cafe</div>
+    <div class="splash-sub">Live Quiz Experience</div>
+  </div>
+
+  <div class="container">
+    <!-- Join Screen -->
+    <div id="screen-join">
+      <h1>Cafe Quiz Join Karein</h1>
+    <input type="text" id="username" placeholder="Apna Naam Likhein..." maxlength="15">
+      <button onclick="joinGame()">Join Game</button>
+    </div>
+
+    <!-- Lobby Screen -->
+    <div id="screen-lobby" class="hidden">
+      <h1>Intzaar Karein...</h1>
+      <p>Host jald hi game shuru karne wala hai!</p>
+      <p style="margin-top: 15px; color: #888;" id="joined-msg"></p>
+    </div>
+
+    <!-- Question Screen -->
+    <div id="screen-question" class="hidden">
+      <div id="q-text" style="font-size: 18px; margin-bottom: 20px; font-weight: 500;"></div>
+      <div id="options-container"></div>
+    </div>
+
+    <!-- Reveal / Wait Screen -->
+    <div id="screen-reveal" class="hidden">
+      <h1>Jawab Dekha Jaa Raha Hai...</h1>
+      <p style="color: #aaa; margin-top: 10px;">Host agla sawal laa raha hai!</p>
+    </div>
+
+    <!-- Finished Screen -->
+    <div id="screen-finished" class="hidden">
+      <h1>🎉 Game Samapt!</h1>
+      <div class="score-board" id="final-score"></div>
+      <p style="margin-top: 15px; color: #ffaa00;" id="win-gift"></p>
+    </div>
+  </div>
+
+  <script>
+    const socket = io();
+    let myId = null;
+
+    function joinGame() {
+      const name = document.getElementById('username').value.trim();
+      if (!name) {
+        alert('Kripya apna naam likhein!');
+        return;
+      }
+      socket.emit('player:join', name, (res) => {
+        if (res.ok) {
+          myId = res.id;
+          localStorage.setItem('cafe_player_id', myId);
+          document.getElementById('screen-join').classList.add('hidden');
+          document.getElementById('screen-lobby').classList.remove('hidden');
+          document.getElementById('joined-msg').innerText = `Swagat hai, ${name}! Host ke game shuru karne ka wait karein.`;
+        }
+      });
+    }
+
+    function submitAnswer(optIndex) {
+      socket.emit('player:answer', { id: myId, opt: optIndex });
+      const buttons = document.querySelectorAll('#options-container button');
+      buttons.forEach(btn => btn.disabled = true);
+      event.target.style.background = '#4caf50';
+    }
+
+    socket.on('state', (state) => {
+      if (state.phase === 'lobby') {
+        // stay on lobby if already joined
+      } else if (state.phase === 'question') {
+        document.getElementById('screen-join').classList.add('hidden');
+        document.getElementById('screen-lobby').classList.add('hidden');
+        document.getElementById('screen-reveal').classList.add('hidden');
+        document.getElementById('screen-finished').classList.add('hidden');
+        document.getElementById('screen-question').classList.remove('hidden');
+
+        document.getElementById('q-text').innerText = state.question.text;
+        const optContainer = document.getElementById('options-container');
+        optContainer.innerHTML = '';
+        state.question.options.forEach((opt, index) => {
+          const btn = document.createElement('button');
+          btn.className = 'option-btn';
+          btn.innerText = opt;
+          btn.onclick = () => submitAnswer(index);
+          optContainer.appendChild(btn);
+        });
+      } else if (state.phase === 'reveal') {
+        document.getElementById('screen-question').classList.add('hidden');
+        document.getElementById('screen-reveal').classList.remove('hidden');
+      } else if (state.phase === 'finished') {
+        document.getElementById('screen-question').classList.add('hidden');
+        document.getElementById('screen-reveal').classList.add('hidden');
+        document.getElementById('screen-finished').classList.remove('hidden');
+
+        const me = state.playersList.find(p => p.id === myId);
+        if (me) {
+          document.getElementById('final-score').innerText = `Aapka Score: ${me.score} Points`;
+        }
+        const winner = state.winners.find(w => w.id === myId);
+        if (winner) {
+          document.getElementById('win-gift').innerText = `Badhai ho! Aapko mila hai: ${winner.gift} (Code: ${winner.code})`;
+        } else {
+          document.getElementById('win-gift').innerText = 'Behtareen koshish! Agli baar jeetne ki koshish karein.';
+        }
+      }
+    });
+
+    socket.on('clear_choice', () => {
+      // Reset options styling if needed
+    });
+  </script>
+</body>
+</html>
